@@ -7,19 +7,100 @@ output:
 
 
 ## Loading and preprocessing the data
+Loading used packages and switch locale to English:
+```{r loadLibraries}
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(lubridate)
 
+Sys.setlocale(locale = "English")
+```
+
+Load data with automatic unzip using `read_csv` from `readr` package.
+```{r loadData}
+raw_data <- read_csv("activity.zip")
+```
 
 
 ## What is mean total number of steps taken per day?
+Total number of steps per day:
+```{r totalStepsRawData}
+totalSteps <- raw_data %>% filter(!is.na(steps)) %>% group_by(date) %>% summarize(total = sum(steps), .groups = "keep")
+totalSteps %>% print(n = nrow(.))
+```
 
+Histogram of the total number of steps per day:
+```{r totalStepsPerDayHistogram}
+ggplot(raw_data, aes(date)) + geom_histogram(aes(weight = steps), na.rm = TRUE, binwidth = 1, color = "grey") + ylab("Total number of steps") + ggtitle("Total number of steps per day on original data")
+```
+
+Mean and median of the total number of steps:
+```{r totalStepsMeanAndMedian}
+mean(totalSteps$total)
+median(totalSteps$total)
+```
 
 
 ## What is the average daily activity pattern?
+Average number of steps per interval:
+```{r meanStepsPerInterval}
+meanStepsInterval <- raw_data %>% group_by(interval) %>% summarize(Mean.Steps = mean(steps, na.rm = TRUE), .groups = "keep")
+plot(meanStepsInterval, type = "l", ylab = "Average number of steps", main = "Average number of steps by interval")
+```
 
+Interval with highest average number of steps:
+```{r intervalWithHighestMeanSteps}
+maxmean <- meanStepsInterval[which.max(meanStepsInterval$Mean.Steps),]
+maxmean
+```
 
 
 ## Imputing missing values
+Total number of missing values: 
+```{r countNAs}
+sum(is.na(raw_data))
+```
 
+Impute missing values with average of interval:
+```{r imputeWithIntervalAverage}
+imputed <- raw_data
+onlyMissing <- raw_data %>% filter(is.na(steps))
+
+imputed[is.na(imputed$steps),] <- onlyMissing %>%
+    inner_join(meanStepsInterval %>% filter(interval %in% onlyMissing[[3]]), by = "interval", copy = FALSE) %>% 
+    select(steps = Mean.Steps, date = date, interval = interval)
+```
+
+Total number of steps per day with imputed data:
+```{r totalStepsImputed}
+totalStepsImputed <- imputed %>% group_by(date) %>% summarize(total = sum(steps), .groups = "keep")
+totalStepsImputed %>% print(n = nrow(.))
+```
+
+Histogram of the total number of steps per day:
+```{r totalStepsPerDayHistogramImputed}
+ggplot(imputed, aes(date)) + geom_histogram(aes(weight = steps), binwidth = 1, color = "grey") + ylab("Total number of steps") + ggtitle("Total number of steps per day on imputed data")
+```
+
+Mean and median of number of steps taken each day:
+```{r totalStepsMeanAndMedianImputed}
+mean(totalStepsImputed$total)
+median(totalStepsImputed$total)
+```
+The only missing data was steps from 8 entire days. After imputing with my strategy (interval average) their values are the same and average of those values is equal to the mean of the total number of steps with missing values removed. Because of that mean didn't change.
+Median changed to higher value, because imputing added data that was higher than median. It seems that imputing in this case balances data set since mean and median are equal.
 
 
 ## Are there differences in activity patterns between weekdays and weekends?
+Introduce new column indicating whether a date is a weekday or weekend day
+```{r addDayTypeColumn}
+withDayType <- imputed %>% 
+  mutate(DayType = factor(wday(imputed$date) < 6, labels = c("Weekend", "Weekday")))
+```
+
+Calculate mean of number of steps per interval split by day type:
+```{r meanStepsPerIntervalSplitByDayType}
+grouped <- withDayType %>% group_by(interval, DayType) %>% summarize(Mean.Steps = mean(steps), .groups = "keep")
+ggplot(grouped, aes(x = interval, y = Mean.Steps)) + geom_line() + facet_grid(DayType ~.) + ylab("Average number of steps")
+```
